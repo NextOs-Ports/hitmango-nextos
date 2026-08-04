@@ -28,6 +28,14 @@
 #include "nx_elf.h"
 
 static SDL_GameController *controller;
+/*
+ * Pad fora da base de mapeamentos do SDL: sem este caminho o controle não é
+ * reconhecido como GameController, `controller` fica NULL e o jogo perde a
+ * navegação INTEIRA — foi o relato do RG40XX-H/muOS ("no navigation control,
+ * the character won't move"). Abrir como joystick cru e usar a ordem
+ * posicional dos pads USB comuns é melhor do que exigir entrada na base.
+ */
+static SDL_Joystick *raw_joystick;
 static uint8_t buttons[SDL_CONTROLLER_BUTTON_MAX];
 static uint8_t previous[SDL_CONTROLLER_BUTTON_MAX];
 static volatile sig_atomic_t exit_requested;
@@ -117,6 +125,35 @@ static int cursor_is_active(void)
     return cursor_enabled;
 }
 
+/*
+ * ===== Botão de seleção =====
+ * Até aqui só o R3 clicava/arrastava o cursor — pedido de campo recorrente
+ * ("R3 é o que eu uso para selecionar"): um clique de menu não pode depender
+ * de apertar o analógico. Agora A TAMBÉM clica, e a confirmação que o A
+ * entregava ao InControl passa para o L1, de modo que nenhuma função se perde.
+ * HGO_CLICK_A=0 devolve o comportamento antigo (só R3).
+ */
+static int click_uses_a = 1;
+
+static int cursor_click_held(void)
+{
+    return buttons[SDL_CONTROLLER_BUTTON_RIGHTSTICK] ||
+           (click_uses_a && buttons[SDL_CONTROLLER_BUTTON_A]);
+}
+
+static int cursor_click_prev(void)
+{
+    return previous[SDL_CONTROLLER_BUTTON_RIGHTSTICK] ||
+           (click_uses_a && previous[SDL_CONTROLLER_BUTTON_A]);
+}
+
+/* O A vira botão de clique quando o cursor está ativo; nesse modo a antiga
+   confirmação do A é servida pelo L1 (livre neste jogo). */
+static int a_is_click_button(void)
+{
+    return click_uses_a && cursor_is_active();
+}
+
 static int hgo_incontrol_button(void *self, int index, void *method)
 {
     (void)self;
@@ -143,6 +180,14 @@ static int hgo_incontrol_button(void *self, int index, void *method)
     if (button < 0 || (cursor_is_active() &&
                        button == SDL_CONTROLLER_BUTTON_RIGHTSTICK))
         return 0;
+    /* A vira clique do cursor: quem entrega a confirmação ao InControl é o L1.
+       Sem essa troca, a função que o A tinha simplesmente sumiria. */
+    if (a_is_click_button()) {
+        if (button == SDL_CONTROLLER_BUTTON_A)
+            return buttons[SDL_CONTROLLER_BUTTON_LEFTSHOULDER] ? 1 : 0;
+        if (button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER)
+            return 0;
+    }
     /* B is delivered as Android's real BACK key below.  Keeping it in the
      * InControl button stream as well would dispatch the same menu action
      * twice on views that listen to both input paths. */
@@ -362,7 +407,22 @@ static float axis_value(SDL_GameControllerAxis axis)
     if (axis >= 0 && axis < SDL_CONTROLLER_AXIS_MAX &&
         virtual_axis_frames[axis] > 0)
         return virtual_axis_values[axis];
-    Sint16 value = controller ? SDL_GameControllerGetAxis(controller, axis) : 0;
+    Sint16 value = 0;
+    if (controller) {
+        value = SDL_GameControllerGetAxis(controller, axis);
+    } else if (raw_joystick) {
+        /* ordem posicional: LX LY RX RY (gatilhos ficam nos botões 6/7) */
+        static const int raw_axis[SDL_CONTROLLER_AXIS_MAX] = {
+            [SDL_CONTROLLER_AXIS_LEFTX] = 0, [SDL_CONTROLLER_AXIS_LEFTY] = 1,
+            [SDL_CONTROLLER_AXIS_RIGHTX] = 2, [SDL_CONTROLLER_AXIS_RIGHTY] = 3,
+            [SDL_CONTROLLER_AXIS_TRIGGERLEFT] = -1,
+            [SDL_CONTROLLER_AXIS_TRIGGERRIGHT] = -1,
+        };
+        int index = (axis >= 0 && axis < SDL_CONTROLLER_AXIS_MAX)
+                  ? raw_axis[axis] : -1;
+        if (index >= 0 && index < SDL_JoystickNumAxes(raw_joystick))
+            value = SDL_JoystickGetAxis(raw_joystick, index);
+    }
     if (axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT ||
         axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT)
         return value > 0 ? value / 32767.0f : 0.0f;
@@ -588,9 +648,10 @@ static void find_trigger_happy_ordinals(void)
 
 static void apply_trigger_happy_buttons(void)
 {
-    if ((th_select_ordinal < 0 && th_start_ordinal < 0) || !controller)
+    if (th_select_ordinal < 0 && th_start_ordinal < 0)
         return;
-    SDL_Joystick *joy = SDL_GameControllerGetJoystick(controller);
+    SDL_Joystick *joy = controller ? SDL_GameControllerGetJoystick(controller)
+                                   : raw_joystick;
     if (!joy)
         return;
     int count = SDL_JoystickNumButtons(joy);
@@ -624,6 +685,25 @@ static void open_controller(void)
         find_trigger_happy_ordinals();
         return;
     }
+    /* Nenhum pad na base do SDL: abre o primeiro joystick cru. */
+    if (!raw_joystick && SDL_NumJoysticks() > 0) {
+        raw_joystick = SDL_JoystickOpen(0);
+        if (raw_joystick) {
+            const char *name = SDL_JoystickName(raw_joystick);
+            hgo_jni_input_device_info("Microsoft X-Box 360 pad",
+                                      SDL_JoystickGetVendor(raw_joystick),
+                                      SDL_JoystickGetProduct(raw_joystick),
+                                      name ? name : "nextos-gamepad");
+            fprintf(stderr,
+                    "[hgo/input] controle CRU: \"%s\" (%d botões, %d eixos, "
+                    "%d hats) — sem mapeamento na base do SDL\n",
+                    name ? name : "desconhecido",
+                    SDL_JoystickNumButtons(raw_joystick),
+                    SDL_JoystickNumAxes(raw_joystick),
+                    SDL_JoystickNumHats(raw_joystick));
+            find_trigger_happy_ordinals();
+        }
+    }
 }
 
 static void inject(void *env, void *player, void *event)
@@ -643,7 +723,7 @@ static void inject(void *env, void *player, void *event)
 
 static void update_cursor(void *env, void *player)
 {
-    if (!cursor_is_active() || (!controller && !virtual_enabled))
+    if (!cursor_is_active() || (!controller && !raw_joystick && !virtual_enabled))
         return;
 
     uint64_t now = SDL_GetPerformanceCounter();
@@ -679,9 +759,9 @@ static void update_cursor(void *env, void *player)
     if (cursor_y < 0.0f) cursor_y = 0.0f;
     if (cursor_y > 719.0f) cursor_y = 719.0f;
 
-    int held = buttons[SDL_CONTROLLER_BUTTON_RIGHTSTICK];
-    int down = held && !previous[SDL_CONTROLLER_BUTTON_RIGHTSTICK];
-    int up = !held && previous[SDL_CONTROLLER_BUTTON_RIGHTSTICK];
+    int held = cursor_click_held();
+    int down = held && !cursor_click_prev();
+    int up = !held && cursor_click_prev();
     float touch_x = cursor_x * screen_width / 1280.0f;
     float touch_y = cursor_y * screen_height / 720.0f;
     if (down) {
@@ -728,9 +808,10 @@ static void update_native_controls(void)
         return;
     }
 
+    const int activate = a_is_click_button()
+        ? SDL_CONTROLLER_BUTTON_LEFTSHOULDER : SDL_CONTROLLER_BUTTON_A;
     if (native_selection_active &&
-        buttons[SDL_CONTROLLER_BUTTON_A] &&
-        !previous[SDL_CONTROLLER_BUTTON_A]) {
+        buttons[activate] && !previous[activate]) {
         ((void (*)(void *, void *))(il2cpp_base + HGO_TVOS_CLICK_UP))(
             native_input_manager, NULL);
         fprintf(stderr, "[hgo/input] native selection activate\n");
@@ -853,6 +934,8 @@ int hgo_input_init(void)
                      strcmp(getenv("HGO_CURSOR"), "0") != 0;
     native_controls_enabled = getenv("HGO_NATIVE_CONTROLS") &&
                               strcmp(getenv("HGO_NATIVE_CONTROLS"), "0") != 0;
+    click_uses_a = !getenv("HGO_CLICK_A") ||
+                   strcmp(getenv("HGO_CLICK_A"), "0") != 0;
     if (SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER |
                           SDL_INIT_EVENTS) != 0) {
         fprintf(stderr, "[hgo/input] SDL controller init failed: %s\n",
@@ -862,7 +945,7 @@ int hgo_input_init(void)
     add_known_mappings();
     open_controller();
     install_incontrol_hooks();
-    return controller || virtual_enabled ? 0 : -1;
+    return (controller || raw_joystick || virtual_enabled) ? 0 : -1;
 }
 
 void hgo_input_poll(void *env, void *player, unsigned long frame)
@@ -891,6 +974,43 @@ void hgo_input_poll(void *env, void *player, unsigned long frame)
         for (int i = 0; i < SDL_CONTROLLER_BUTTON_MAX; i++)
             buttons[i] = SDL_GameControllerGetButton(
                 controller, (SDL_GameControllerButton)i) ? 1 : 0;
+    } else if (raw_joystick) {
+        SDL_JoystickUpdate();
+        memset(buttons, 0, sizeof buttons);
+        /* ordem posicional dos pads USB/handheld comuns */
+        static const int raw_map[SDL_CONTROLLER_BUTTON_MAX] = {
+            [SDL_CONTROLLER_BUTTON_A] = 0, [SDL_CONTROLLER_BUTTON_B] = 1,
+            [SDL_CONTROLLER_BUTTON_X] = 2, [SDL_CONTROLLER_BUTTON_Y] = 3,
+            [SDL_CONTROLLER_BUTTON_LEFTSHOULDER] = 4,
+            [SDL_CONTROLLER_BUTTON_RIGHTSHOULDER] = 5,
+            [SDL_CONTROLLER_BUTTON_BACK] = 8,
+            [SDL_CONTROLLER_BUTTON_START] = 9,
+            [SDL_CONTROLLER_BUTTON_LEFTSTICK] = 10,
+            [SDL_CONTROLLER_BUTTON_RIGHTSTICK] = 11,
+            [SDL_CONTROLLER_BUTTON_DPAD_UP] = -1,
+            [SDL_CONTROLLER_BUTTON_DPAD_DOWN] = -1,
+            [SDL_CONTROLLER_BUTTON_DPAD_LEFT] = -1,
+            [SDL_CONTROLLER_BUTTON_DPAD_RIGHT] = -1,
+        };
+        int count = SDL_JoystickNumButtons(raw_joystick);
+        for (int i = 0; i < SDL_CONTROLLER_BUTTON_MAX; i++) {
+            int index = raw_map[i];
+            if (index >= 0 && index < count)
+                buttons[i] = SDL_JoystickGetButton(raw_joystick, index) ? 1 : 0;
+        }
+        /* d-pad: hat quando existe, senão botões 12..15 (RK3326 e família) */
+        if (SDL_JoystickNumHats(raw_joystick) > 0) {
+            Uint8 hat = SDL_JoystickGetHat(raw_joystick, 0);
+            buttons[SDL_CONTROLLER_BUTTON_DPAD_UP] = (hat & SDL_HAT_UP) ? 1 : 0;
+            buttons[SDL_CONTROLLER_BUTTON_DPAD_DOWN] = (hat & SDL_HAT_DOWN) ? 1 : 0;
+            buttons[SDL_CONTROLLER_BUTTON_DPAD_LEFT] = (hat & SDL_HAT_LEFT) ? 1 : 0;
+            buttons[SDL_CONTROLLER_BUTTON_DPAD_RIGHT] = (hat & SDL_HAT_RIGHT) ? 1 : 0;
+        } else if (count > 15) {
+            buttons[SDL_CONTROLLER_BUTTON_DPAD_UP] = SDL_JoystickGetButton(raw_joystick, 12) ? 1 : 0;
+            buttons[SDL_CONTROLLER_BUTTON_DPAD_DOWN] = SDL_JoystickGetButton(raw_joystick, 13) ? 1 : 0;
+            buttons[SDL_CONTROLLER_BUTTON_DPAD_LEFT] = SDL_JoystickGetButton(raw_joystick, 14) ? 1 : 0;
+            buttons[SDL_CONTROLLER_BUTTON_DPAD_RIGHT] = SDL_JoystickGetButton(raw_joystick, 15) ? 1 : 0;
+        }
     } else {
         memset(buttons, 0, sizeof buttons);
     }
@@ -898,7 +1018,7 @@ void hgo_input_poll(void *env, void *player, unsigned long frame)
     poll_virtual_controller();
     update_native_controls();
 
-    if (!controller && !virtual_enabled)
+    if (!controller && !raw_joystick && !virtual_enabled)
         return;
 
     int select = buttons[SDL_CONTROLLER_BUTTON_BACK] ||
@@ -913,6 +1033,8 @@ void hgo_input_poll(void *env, void *player, unsigned long frame)
 
     for (int i = 0; i < SDL_CONTROLLER_BUTTON_MAX; i++) {
         if (cursor_is_active() && i == SDL_CONTROLLER_BUTTON_RIGHTSTICK)
+            continue;
+        if (a_is_click_button() && i == SDL_CONTROLLER_BUTTON_A)
             continue;
         if (native_selection_active && i == SDL_CONTROLLER_BUTTON_A)
             continue;
@@ -960,6 +1082,10 @@ void hgo_input_close(void)
     if (controller) {
         SDL_GameControllerClose(controller);
         controller = NULL;
+    }
+    if (raw_joystick) {
+        SDL_JoystickClose(raw_joystick);
+        raw_joystick = NULL;
     }
     SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK |
                       SDL_INIT_EVENTS);

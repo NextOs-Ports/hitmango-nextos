@@ -2716,7 +2716,23 @@ def install_command(args):
                 message="VALIDATING EXTRACTED GAME DATA",
                 force=True,
             )
-            validate_recipe_outputs(stage, recipe, plan.abi, plan=plan, full=True)
+            try:
+                validate_recipe_outputs(stage, recipe, plan.abi, plan=plan, full=True)
+            except ValidationError:
+                # O stage é reaproveitado entre execuções pelo resume, e cada
+                # item é aceito sozinho. Se o CONJUNTO reprova, repetir a
+                # instalação apenas revalida o mesmo stage e reprova de novo
+                # para sempre — foi o que o campo mostrou ("resuming 1.2 GiB of
+                # already validated staged data" seguido do mesmo erro). Um
+                # payload que não passou não pode ser reaproveitado: descarta o
+                # stage para que a próxima execução extraia do zero.
+                logger.log(
+                    "discarding staged data that failed validation "
+                    "(next run extracts from scratch)"
+                )
+                remove_path(stage)
+                remove_path(os.path.join(workspace, "state.json"))
+                raise
             progress.update(
                 phase=6,
                 overall=890,

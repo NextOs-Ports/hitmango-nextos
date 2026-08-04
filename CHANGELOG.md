@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.1.1 — 2026-08-04
+
+Field-report fixes (muOS/RG40XX-H and friends), same day as v1.1.0.
+
+- **Pad outside SDL's built-in mapping database no longer loses ALL
+  navigation** (muOS/RG40XX-H report: "the character won't move"): the loader
+  now opens the pad as a raw joystick with positional button/axis order when
+  no GameController mapping exists, and `run.sh` also feeds the CFW's
+  `gamecontrollerdb.txt` to SDL when present.
+- **NXExtract: a staged payload that fails whole-set validation is discarded**
+  instead of being resumed and re-failing forever (local patch on top of
+  1.2.1, recorded in `nxextract-version.txt`; candidate for upstream 1.2.2).
+- **Recipe tolerances widened**: bigger XAPK/bundle member caps (3 GiB/6 GiB)
+  and looser file-count floor so legitimate Play builds with slightly
+  different packaging are not rejected as "different build".
+
 ## v1.1.0 — 2026-08-04
 
 Compatibility review before the public release; parity with the fixes promoted

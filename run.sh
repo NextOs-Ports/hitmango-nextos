@@ -166,6 +166,16 @@ export LD_LIBRARY_PATH="$hgo_system_libs:$controlfolder/libs:$controlfolder/libs
 export SDL_GAMECONTROLLER_USE_BUTTON_LABELS=0
 [ -n "${sdl_controllerconfig:-}" ] &&
   export SDL_GAMECONTROLLERCONFIG=$sdl_controllerconfig
+# Base de mapeamentos do CFW. Sem ela, num firmware cujo pad não está na base
+# embutida do SDL (relato do muOS/RG40XX-H), o controle não é reconhecido como
+# GameController e o jogo fica SEM navegação nenhuma.
+if [ -z "${SDL_GAMECONTROLLERCONFIG_FILE:-}" ] && [ -n "${controlfolder:-}" ]; then
+  for _db in "$controlfolder/gamecontrollerdb.txt" \
+             "$controlfolder/gamecontrollerdb-SDL2.txt"; do
+    [ -r "$_db" ] && [ ! -L "$_db" ] &&
+      { export SDL_GAMECONTROLLERCONFIG_FILE=$_db; break; }
+  done
+fi
 export MALLOC_ARENA_MAX=${MALLOC_ARENA_MAX:-2}
 # The right-stick cursor remains available in menus, level selection and on the
 # board.  During a turn, D-pad/left stick also feed Hitman GO's own

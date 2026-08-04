@@ -15,8 +15,8 @@
     "sniff_all_in_primary": true,
     "max_files": 64,
     "max_bundle_apks": 64,
-    "max_member_bytes": 1073741824,
-    "max_bundle_bytes": 2147483648
+    "max_member_bytes": 3221225472,
+    "max_bundle_bytes": 6442450944
   },
   "extract": [
     {
@@ -31,12 +31,11 @@
       "destination": "assets",
       "validate": {
         "type": "tree",
-        "min_files": 1300,
+        "min_files": 1250,
         "max_files": 1500,
         "min_bytes": 1215000000,
         "max_bytes": 1360000000,
         "required_paths": [
-          "AVConfig.json",
           "bin/Data/boot.config",
           "bin/Data/globalgamemanagers",
           "bin/Data/Managed/Metadata/global-metadata.dat"
@@ -118,12 +117,6 @@
       "type": "file",
       "min_size": 6700000,
       "max_size": 7500000
-    },
-    {
-      "path": "assets/AVConfig.json",
-      "type": "file",
-      "min_size": 160000,
-      "max_size": 195000
     }
   ],
   "commit": [

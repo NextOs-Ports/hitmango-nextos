@@ -175,6 +175,32 @@ void hgo_jni_input_device_info(const char *name, int vendor, int product,
     input_device_product = product;
 }
 
+/*
+ * ===== Snapshot por evento (lição do Oceanhorn v1.0.6) =====
+ * O motor lê parte do evento DURANTE o nativeInjectEvent e o RESTO depois, da
+ * fila de input. O MotionEvent já estava protegido porque o Unity o copia com
+ * MotionEvent.obtain() (ver motion_clones). O KeyEvent não tem obtain no
+ * Android: com um objeto único lendo a struct global, dois KeyEvents no mesmo
+ * quadro — soltar uma diagonal, trocar de direção rápido — faziam a leitura
+ * adiada do primeiro devolver os campos do segundo, e a soltura sumia. Cada
+ * injeção agora congela seus campos num slot próprio.
+ */
+#define KEY_CLONE_COUNT 32
+static jobj *key_clones[KEY_CLONE_COUNT];
+static struct {
+    int action, keycode, source, device_id, meta_state, repeat, scancode;
+    int flags, unicode;
+    int64_t event_time, down_time;
+} key_clone_data[KEY_CLONE_COUNT];
+static unsigned key_clone_next;
+
+static int key_clone_index(jobj *object)
+{
+    for (int i = 0; i < KEY_CLONE_COUNT; i++)
+        if (object && object == key_clones[i]) return i;
+    return -1;
+}
+
 void *hgo_jni_key_event(int action, int keycode, int scancode)
 {
     int64_t now = monotonic_millis();
@@ -194,11 +220,21 @@ void *hgo_jni_key_event(int action, int keycode, int scancode)
     key_event.flags = 0;
     key_event.unicode = 0;
     key_event.event_time = now;
-    if (action == 1) {
-        /* nativeInjectEvent consumes the object synchronously, so the slot can
-         * be released as soon as this call returns to the input bridge. */
-    }
-    return key_event_object;
+    unsigned slot = key_clone_next++ % KEY_CLONE_COUNT;
+    if (!key_clones[slot])
+        key_clones[slot] = mk_object("android/view/KeyEvent");
+    key_clone_data[slot].action = key_event.action;
+    key_clone_data[slot].keycode = key_event.keycode;
+    key_clone_data[slot].source = key_event.source;
+    key_clone_data[slot].device_id = key_event.device_id;
+    key_clone_data[slot].meta_state = key_event.meta_state;
+    key_clone_data[slot].repeat = key_event.repeat;
+    key_clone_data[slot].scancode = key_event.scancode;
+    key_clone_data[slot].flags = key_event.flags;
+    key_clone_data[slot].unicode = key_event.unicode;
+    key_clone_data[slot].event_time = now;
+    key_clone_data[slot].down_time = key_event.down_time[keycode];
+    return key_clones[slot];
 }
 
 void *hgo_jni_motion_event(float lx, float ly, float rx, float ry,
@@ -983,23 +1019,29 @@ static int64_t j_MotionRange_getFloat(jctx *c)
 
 static int64_t j_KeyEvent_getInt(jctx *c)
 {
-    if (strcmp(c->m->name, "getAction") == 0) return key_event.action;
-    if (strcmp(c->m->name, "getKeyCode") == 0) return key_event.keycode;
-    if (strcmp(c->m->name, "getSource") == 0) return key_event.source;
-    if (strcmp(c->m->name, "getDeviceId") == 0) return key_event.device_id;
-    if (strcmp(c->m->name, "getMetaState") == 0) return key_event.meta_state;
-    if (strcmp(c->m->name, "getRepeatCount") == 0) return key_event.repeat;
-    if (strcmp(c->m->name, "getScanCode") == 0) return key_event.scancode;
-    if (strcmp(c->m->name, "getFlags") == 0) return key_event.flags;
-    if (strcmp(c->m->name, "getUnicodeChar") == 0) return key_event.unicode;
+    int slot = key_clone_index(c->self);
+    const char *n = c->m->name;
+#define KEY_FIELD(field) (slot >= 0 ? key_clone_data[slot].field : key_event.field)
+    if (strcmp(n, "getAction") == 0) return KEY_FIELD(action);
+    if (strcmp(n, "getKeyCode") == 0) return KEY_FIELD(keycode);
+    if (strcmp(n, "getSource") == 0) return KEY_FIELD(source);
+    if (strcmp(n, "getDeviceId") == 0) return KEY_FIELD(device_id);
+    if (strcmp(n, "getMetaState") == 0) return KEY_FIELD(meta_state);
+    if (strcmp(n, "getRepeatCount") == 0) return KEY_FIELD(repeat);
+    if (strcmp(n, "getScanCode") == 0) return KEY_FIELD(scancode);
+    if (strcmp(n, "getFlags") == 0) return KEY_FIELD(flags);
+    if (strcmp(n, "getUnicodeChar") == 0) return KEY_FIELD(unicode);
+#undef KEY_FIELD
     return 0;
 }
 
 static int64_t j_KeyEvent_getLong(jctx *c)
 {
+    int slot = key_clone_index(c->self);
     if (strcmp(c->m->name, "getDownTime") == 0)
-        return key_event.down_time[key_event.keycode];
-    return key_event.event_time;
+        return slot >= 0 ? key_clone_data[slot].down_time
+                         : key_event.down_time[key_event.keycode];
+    return slot >= 0 ? key_clone_data[slot].event_time : key_event.event_time;
 }
 
 static int64_t j_KeyEvent_isSystem(jctx *c)
