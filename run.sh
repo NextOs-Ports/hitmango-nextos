@@ -126,6 +126,21 @@ hgo_old=$(hgo_pids)
 [ -z "$hgo_old" ] ||
   runtime_error "outro loader do Hitman GO ainda esta vivo: $hgo_old"
 
+# ---- NXExtract: dados BYO validados/instalados de forma transacional ----
+# A UI usa SDL/EGL/GLES do firmware (nxextract-runtime-env.sh cuida do escopo);
+# o arquivo legal do usuario nunca e' apagado; dados antigos validos sao
+# adotados por hash sem pedir o APK de novo.
+chmod +x "$GAMEDIR/run-extractor.sh" "$GAMEDIR/nxextract-runtime-env.sh" \
+  "$GAMEDIR/nxextract.py" "$GAMEDIR/nxextract-ui" 2>/dev/null || true
+if [ -f "$GAMEDIR/extractor.json" ] && [ -x "$GAMEDIR/run-extractor.sh" ]; then
+  command -v python3 >/dev/null 2>&1 ||
+    runtime_error "este firmware nao tem python3; o instalador de dados nao pode rodar"
+  NXEXTRACT_GAME_DIR=$GAMEDIR \
+    NXEXTRACT_FIRMWARE_LIBRARY_PATH=/usr/local/lib/aarch64-linux-gnu:/usr/local/lib:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib \
+    "$GAMEDIR/run-extractor.sh" ||
+    runtime_error "dados do jogo ausentes ou invalidos. Coloque seu APK do Hitman GO (1.18.1, arm64) em ports/hitmango/gamedata/ e abra de novo"
+fi
+
 for hgo_required in \
   hitmango \
   lib/libmain.so \

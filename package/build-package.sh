@@ -63,6 +63,14 @@ fi
 put 0644 "$STATIC_DIR/assets/README.txt" "hitmango/assets/README.txt"
 put 0644 "$STATIC_DIR/lib/README.txt" "hitmango/lib/README.txt"
 put 0644 "$PORT_DIR/version.txt" "hitmango/version.txt"
+put 0755 "$PORT_DIR/nxextract.py" "hitmango/nxextract.py"
+put 0755 "$PORT_DIR/nxextract-ui" "hitmango/nxextract-ui"
+put 0755 "$PORT_DIR/nxextract-runtime-env.sh" "hitmango/nxextract-runtime-env.sh"
+put 0755 "$PORT_DIR/run-extractor.sh" "hitmango/run-extractor.sh"
+put 0644 "$PORT_DIR/extractor.json" "hitmango/extractor.json"
+put 0644 "$PORT_DIR/nxextract-version.txt" "hitmango/nxextract-version.txt"
+put 0644 "$PORT_DIR/gamedata/LEIA-ME.txt" "hitmango/gamedata/LEIA-ME.txt"
+put 0644 "$PORT_DIR/INSTALLATION.md" "hitmango/INSTALLATION.md"
 
 glibc_at_most() {
   local candidate=$1 maximum=$2 newest version major minor machine
@@ -89,8 +97,10 @@ while IFS= read -r -d '' candidate; do
   case "$kind" in
     *ELF*)
       relative=${candidate#"$STAGE/"}
-      [[ $relative == hitmango/hitmango ]] ||
-        fail "unexpected ELF entered package: $relative"
+      case "$relative" in
+        hitmango/hitmango|hitmango/nxextract-ui) ;;
+        *) fail "unexpected ELF entered package: $relative" ;;
+      esac
       glibc_at_most "$candidate" 30
       ;;
     *PE32*|*Mach-O*)

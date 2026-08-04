@@ -67,6 +67,7 @@ int hgo_input_init(void);
 void hgo_input_poll(void *env, void *player, unsigned long frame);
 void hgo_input_close(void);
 int hgo_input_exit_requested(void);
+void hgo_input_request_exit(void);
 /* Right-stick pointer, in 1280x720 top-left coordinates.  EGL reads the
  * snapshot on the render thread immediately before swap. */
 int hgo_input_cursor(float *x, float *y);

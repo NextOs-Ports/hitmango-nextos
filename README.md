@@ -1,18 +1,66 @@
-# Hitman GO 1.18.1 — native NextOS ARM64 port (Unity 2022 / Mali-450 GLES2)
+# Hitman GO 1.18.1 — universal AArch64 Unity/IL2CPP port
+
+[![Release](https://img.shields.io/github/v/release/NextOs-Ports/hitmango-nextos)](https://github.com/NextOs-Ports/hitmango-nextos/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](https://github.com/NextOs-Ports/hitmango-nextos/blob/master/LICENSE)
+
+**Language / Idioma:** [English](#english) · [Português](#português)
+
+This project is an independent compatibility loader. It does not distribute
+Hitman GO's APK, Unity/IL2CPP libraries, art, music or any other proprietary
+game data.
+
+[Download the latest package / Baixar o pacote](https://github.com/NextOs-Ports/hitmango-nextos/releases/latest)
+
+| | | |
+|---|---|---|
+| ![Title on R36T/ArkOS](docs/images/title-r36t.png) | ![Chapter select on NextOS Elite](docs/images/chapters-elite.png) | ![Level gameplay on R36T/ArkOS](docs/images/gameplay-r36t.png) |
+
+## Support this work
+
+These ports take real time and real money to build. If you enjoy them:
+
+- 💗 **GitHub Sponsors**: [github.com/sponsors/NextOs-Ports](https://github.com/sponsors/NextOs-Ports)
+- ☕ **Ko-fi** (PayPal/card): [ko-fi.com/nextos](https://ko-fi.com/nextos)
+- 🇧🇷 **PIX**: [livepix.gg/nextos](https://livepix.gg/nextos)
+
+## Community
+
+Questions, bug reports, help getting the port running, and news about the next ones:
+
+💬 **Discord:** [discord.gg/DHfY62eDNN](https://discord.gg/DHfY62eDNN)
+
+---
 
 Native AArch64 compatibility loader for the Android release of **Hitman GO**.
 It runs the original Unity 2022.3.67f2 IL2CPP engine and game code directly on
-Linux/NextOS; it does not emulate Android and does not rebuild game logic.
+Linux handhelds; it does not emulate Android and does not rebuild game logic.
 
 Status: **playable**. Boot, legal/title screens, chapter selection, levels,
 rendering, music/effects, saves, native board movement, touchscreen UI through
 a gamepad cursor, restart, hints, pause/objectives and clean exit were validated
-on a Mali-450 fbdev device. The cursor intentionally remains visible in menus,
-chapter selection, during levels and after opening a hint.
+on a Mali-450 fbdev device (NextOS Elite) and on an ArkOS Mali-G31 device
+(R36T-class clone). The cursor intentionally remains visible in menus, chapter
+selection, during levels and after opening a hint.
 
 This repository and its public ZIP contain only the open compatibility loader.
-You must supply the assets and ARM64 native libraries from your own legitimate
-Hitman GO 1.18.1 Android installation.
+Game data comes from your own legitimate Hitman GO 1.18.1 Android copy: drop
+your APK in `gamedata/` and the bundled NXExtract installs it transactionally
+on first launch — see [INSTALLATION.md](INSTALLATION.md).
+
+## Português
+
+Loader de compatibilidade AArch64 nativo para o Hitman GO Android (Unity
+2022.3 IL2CPP). Não emula Android nem distribui dados do jogo: coloque seu APK
+legal (1.18.1, arm64) em `ports/hitmango/gamedata/` e o NXExtract embutido
+valida e instala tudo na primeira abertura, com barra de progresso e sem nunca
+apagar o seu arquivo — instruções completas em
+[INSTALLATION.md](INSTALLATION.md).
+
+Estado: **jogável** — boot, título, seleção de capítulos, níveis, movimento
+nativo no tabuleiro, áudio, saves, dicas, pause e saída limpa validados no
+NextOS Elite (Mali-450) e em clone R36T/ArkOS (Mali-G31). **SELECT+START**
+salva e sai; o analógico direito é um cursor de fallback para a interface de
+toque.
 
 ## English
 

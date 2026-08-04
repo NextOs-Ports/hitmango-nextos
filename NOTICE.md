@@ -14,6 +14,11 @@ The ETC2 software decoder follows the public Khronos ETC2/EAC format
 specification. SDL2, EGL, GLES, zlib and standard system libraries are supplied
 by the target firmware and are not bundled.
 
+NXExtract (the vendored BYO-data installer: `nxextract.py`, `nxextract-ui`,
+`nxextract-runtime-env.sh`, `run-extractor.sh`) is distributed under the MIT
+license — see `licenses/NXExtract-MIT.txt`; version and hashes are pinned in
+`nxextract-version.txt`.
+
 Hitman GO, its Android APK, Unity/IL2CPP libraries, Firebase library, scenes,
 textures, artwork, music, sound effects, saves and other game data are
 proprietary works of their respective rightsholders. They are separate from

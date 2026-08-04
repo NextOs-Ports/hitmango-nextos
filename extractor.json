@@ -1,0 +1,140 @@
+{
+  "schema": 1,
+  "id": "hitmango-nextos",
+  "version": "1.18.1-universal-1",
+  "title": "HITMAN GO",
+  "abi_order": [
+    "arm64-v8a"
+  ],
+  "input": {
+    "search_dirs": [
+      "gamedata",
+      "."
+    ],
+    "prefer_first_nonempty": true,
+    "sniff_all_in_primary": true,
+    "max_files": 64,
+    "max_bundle_apks": 64,
+    "max_member_bytes": 1073741824,
+    "max_bundle_bytes": 2147483648
+  },
+  "extract": [
+    {
+      "id": "android-unity-assets-1181",
+      "source": {
+        "kind": "entries",
+        "patterns": [
+          "assets/**"
+        ],
+        "strip_prefix": "assets/"
+      },
+      "destination": "assets",
+      "validate": {
+        "type": "tree",
+        "min_files": 1300,
+        "max_files": 1500,
+        "min_bytes": 1215000000,
+        "max_bytes": 1360000000,
+        "required_paths": [
+          "AVConfig.json",
+          "bin/Data/boot.config",
+          "bin/Data/globalgamemanagers",
+          "bin/Data/Managed/Metadata/global-metadata.dat"
+        ]
+      }
+    },
+    {
+      "id": "android-arm64-libraries-1181",
+      "source": {
+        "kind": "entries",
+        "patterns": [
+          "lib/{abi}/libmain.so",
+          "lib/{abi}/libunity.so",
+          "lib/{abi}/libil2cpp.so",
+          "lib/{abi}/libFirebaseCppApp-12_10_1.so"
+        ],
+        "strip_prefix": "lib/{abi}/"
+      },
+      "destination": "lib",
+      "validate": {
+        "type": "tree",
+        "min_files": 4,
+        "max_files": 4,
+        "min_bytes": 52000000,
+        "max_bytes": 60500000,
+        "required_paths": [
+          "libmain.so",
+          "libunity.so",
+          "libil2cpp.so",
+          "libFirebaseCppApp-12_10_1.so"
+        ]
+      }
+    }
+  ],
+  "hooks": [],
+  "validate": [
+    {
+      "path": "lib/libunity.so",
+      "type": "file",
+      "min_size": 16100000,
+      "max_size": 18200000,
+      "elf_machine": "aarch64"
+    },
+    {
+      "path": "lib/libil2cpp.so",
+      "type": "file",
+      "min_size": 30900000,
+      "max_size": 35000000,
+      "elf_machine": "aarch64"
+    },
+    {
+      "path": "lib/libmain.so",
+      "type": "file",
+      "min_size": 6000,
+      "max_size": 7500,
+      "elf_machine": "aarch64"
+    },
+    {
+      "path": "lib/libFirebaseCppApp-12_10_1.so",
+      "type": "file",
+      "min_size": 5600000,
+      "max_size": 6500000,
+      "elf_machine": "aarch64"
+    },
+    {
+      "path": "assets/bin/Data/boot.config",
+      "type": "file",
+      "min_size": 190,
+      "max_size": 240
+    },
+    {
+      "path": "assets/bin/Data/globalgamemanagers",
+      "type": "file",
+      "min_size": 500000,
+      "max_size": 590000
+    },
+    {
+      "path": "assets/bin/Data/Managed/Metadata/global-metadata.dat",
+      "type": "file",
+      "min_size": 6700000,
+      "max_size": 7500000
+    },
+    {
+      "path": "assets/AVConfig.json",
+      "type": "file",
+      "min_size": 160000,
+      "max_size": 195000
+    }
+  ],
+  "commit": [
+    "assets",
+    "lib"
+  ],
+  "marker": ".nxextract-hitmango.json",
+  "space": {
+    "safety_bytes": 268435456
+  },
+  "log": "nxextract.log",
+  "ui_success_seconds": 1,
+  "ui_error_seconds": 8
+}

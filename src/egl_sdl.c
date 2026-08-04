@@ -172,7 +172,9 @@ static void detect_size(void)
             screen_width, screen_height, source ? source : "fallback");
 }
 
-static void set_context_attributes(int depth, int stencil)
+static int alpha_size;
+
+static void set_context_attributes(int depth, int stencil, int alpha)
 {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
                         SDL_GL_CONTEXT_PROFILE_ES);
@@ -181,7 +183,7 @@ static void set_context_attributes(int depth, int stencil)
     SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 0);
+    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, alpha);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, depth);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, stencil);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -198,13 +200,18 @@ static int context_is_gles(void)
 
 static int create_window(void)
 {
-    static const struct { int depth, stencil; } formats[] = {
-        { 24, 8 }, { 16, 0 }, { 0, 0 },
+    /* Alpha 8 vem primeiro: Unity 2022.3 contrata RGBA8888 e o Mesa/Panfrost
+     * devolve RGBX8888 no primeiro match quando alpha 0 é aceito (tela preta
+     * no RG-DS/ROCKNIX — fix aprovado no Horizon Chase v1.0.3).  Alpha 0
+     * permanece como fallback para drivers sem config RGBA janela. */
+    static const struct { int depth, stencil, alpha; } formats[] = {
+        { 24, 8, 8 }, { 24, 8, 0 }, { 16, 0, 8 }, { 16, 0, 0 }, { 0, 0, 0 },
     };
     detect_size();
 
     for (size_t i = 0; i < sizeof formats / sizeof formats[0]; i++) {
-        set_context_attributes(formats[i].depth, formats[i].stencil);
+        set_context_attributes(formats[i].depth, formats[i].stencil,
+                               formats[i].alpha);
         video_window = SDL_CreateWindow(
             "Hitman GO", SDL_WINDOWPOS_CENTERED,
             SDL_WINDOWPOS_CENTERED, screen_width, screen_height,
@@ -226,6 +233,15 @@ static int create_window(void)
         if (share_root) {
             depth_size = formats[i].depth;
             stencil_size = formats[i].stencil;
+            int r = 0, g = 0, b = 0, a = 0;
+            SDL_GL_GetAttribute(SDL_GL_RED_SIZE, &r);
+            SDL_GL_GetAttribute(SDL_GL_GREEN_SIZE, &g);
+            SDL_GL_GetAttribute(SDL_GL_BLUE_SIZE, &b);
+            SDL_GL_GetAttribute(SDL_GL_ALPHA_SIZE, &a);
+            alpha_size = a;
+            fprintf(stderr,
+                    "[hgo/video] SDL config: R%dG%dB%dA%d depth%d stencil%d\n",
+                    r, g, b, a, depth_size, stencil_size);
             break;
         }
 
@@ -370,8 +386,8 @@ static EGLBoolean sdl_eglGetConfigAttrib(EGLDisplay display, EGLConfig config,
     if (!value)
         return EGL_FALSE;
     switch (attribute) {
-    case EGL_BUFFER_SIZE:       *value = 24; break;
-    case EGL_ALPHA_SIZE:        *value = 0; break;
+    case EGL_BUFFER_SIZE:       *value = 24 + alpha_size; break;
+    case EGL_ALPHA_SIZE:        *value = alpha_size; break;
     case EGL_BLUE_SIZE:
     case EGL_GREEN_SIZE:
     case EGL_RED_SIZE:          *value = 8; break;
@@ -473,7 +489,7 @@ static EGLContext sdl_eglCreateContext(EGLDisplay display, EGLConfig config,
         return EGL_NO_CONTEXT;
 
     pthread_mutex_lock(&context_lock);
-    set_context_attributes(depth_size, stencil_size);
+    set_context_attributes(depth_size, stencil_size, alpha_size);
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
     SDL_GL_MakeCurrent(video_window, share_root);
     context->context = SDL_GL_CreateContext(video_window);

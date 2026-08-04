@@ -286,6 +286,12 @@ static void on_fault(int sig, siginfo_t *si, void *uc)
     _exit(2);
 }
 
+static void on_exit_signal(int sig)
+{
+    (void)sig;
+    hgo_input_request_exit();
+}
+
 static void install_fault_handler(void)
 {
     struct sigaction sa;
@@ -295,6 +301,15 @@ static void install_fault_handler(void)
     sigaction(SIGSEGV, &sa, NULL);
     sigaction(SIGBUS, &sa, NULL);
     sigaction(SIGILL, &sa, NULL);
+
+    /* SIGTERM/SIGINT seguem o caminho do SELECT+START (pause/save/saída),
+     * nunca morte seca: frontends e supervisores mandam TERM primeiro. */
+    struct sigaction quit;
+    memset(&quit, 0, sizeof quit);
+    quit.sa_handler = on_exit_signal;
+    sigemptyset(&quit.sa_mask);
+    sigaction(SIGTERM, &quit, NULL);
+    sigaction(SIGINT, &quit, NULL);
 }
 
 static void run_unity(void)

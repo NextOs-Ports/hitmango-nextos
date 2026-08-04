@@ -11,12 +11,16 @@
 
 #define _GNU_SOURCE
 #include <SDL2/SDL.h>
+#include <fcntl.h>
+#include <linux/input.h>
 #include <math.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -26,7 +30,14 @@
 static SDL_GameController *controller;
 static uint8_t buttons[SDL_CONTROLLER_BUTTON_MAX];
 static uint8_t previous[SDL_CONTROLLER_BUTTON_MAX];
-static int exit_requested;
+static volatile sig_atomic_t exit_requested;
+
+/* SIGTERM/SIGINT convergem no mesmo shutdown do SELECT+START: o loop de
+ * render vê exit_requested e percorre pause/save/saída na ordem original. */
+void hgo_input_request_exit(void)
+{
+    exit_requested = 1;
+}
 static int virtual_enabled;
 static unsigned virtual_button_frames[SDL_CONTROLLER_BUTTON_MAX];
 static unsigned virtual_axis_frames[SDL_CONTROLLER_AXIS_MAX];
@@ -521,6 +532,76 @@ static void add_known_mappings(void)
     }
 }
 
+/* SELECT/START em pads sem BTN_SELECT/BTN_START físicos (GO-Super e família
+ * RK3326): os dois botões chegam como BTN_TRIGGER_HAPPY1/2 e a base do SDL não
+ * os mapeia para BACK/START, então o combo de saída nunca era visto.  O
+ * ordinal SDL de um botão é a contagem de bits setados em [BTN_JOYSTICK, code)
+ * no bitmap EV_KEY do nó de evento, lido com o long DESTE processo.  Se o pad
+ * tiver SELECT/START reais a sonda devolve -1 e nada muda. */
+static int th_select_ordinal = -1;
+static int th_start_ordinal = -1;
+
+static int evdev_bit(const unsigned long *bits, int i)
+{
+    return (bits[i / (8 * sizeof(long))] >> (i % (8 * sizeof(long)))) & 1UL;
+}
+
+static int evdev_key_rank(const unsigned long *keyb, int code)
+{
+    if (!evdev_bit(keyb, code))
+        return -1;
+    int rank = 0;
+    for (int i = BTN_JOYSTICK; i < code; i++)
+        if (evdev_bit(keyb, i))
+            rank++;
+    return rank;
+}
+
+static void find_trigger_happy_ordinals(void)
+{
+    th_select_ordinal = th_start_ordinal = -1;
+    for (int i = 0; i < 32; i++) {
+        char path[64];
+        snprintf(path, sizeof path, "/dev/input/event%d", i);
+        int fd = open(path, O_RDONLY | O_CLOEXEC);
+        if (fd < 0)
+            continue;
+        unsigned long keyb[(KEY_MAX + 1 + 8 * sizeof(long) - 1) /
+                           (8 * sizeof(long))];
+        memset(keyb, 0, sizeof keyb);
+        if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof keyb), keyb) >= 0 &&
+            evdev_bit(keyb, BTN_GAMEPAD) && !evdev_bit(keyb, BTN_SELECT) &&
+            !evdev_bit(keyb, BTN_START) &&
+            evdev_bit(keyb, BTN_TRIGGER_HAPPY1)) {
+            th_select_ordinal = evdev_key_rank(keyb, BTN_TRIGGER_HAPPY1);
+            th_start_ordinal = evdev_key_rank(keyb, BTN_TRIGGER_HAPPY2);
+            fprintf(stderr,
+                    "[hgo/input] %s has no physical SELECT/START; "
+                    "TRIGGER_HAPPY1/2 ordinals = %d/%d\n",
+                    path, th_select_ordinal, th_start_ordinal);
+            close(fd);
+            return;
+        }
+        close(fd);
+    }
+}
+
+static void apply_trigger_happy_buttons(void)
+{
+    if ((th_select_ordinal < 0 && th_start_ordinal < 0) || !controller)
+        return;
+    SDL_Joystick *joy = SDL_GameControllerGetJoystick(controller);
+    if (!joy)
+        return;
+    int count = SDL_JoystickNumButtons(joy);
+    if (th_select_ordinal >= 0 && th_select_ordinal < count &&
+        SDL_JoystickGetButton(joy, th_select_ordinal))
+        buttons[SDL_CONTROLLER_BUTTON_BACK] = 1;
+    if (th_start_ordinal >= 0 && th_start_ordinal < count &&
+        SDL_JoystickGetButton(joy, th_start_ordinal))
+        buttons[SDL_CONTROLLER_BUTTON_START] = 1;
+}
+
 static void open_controller(void)
 {
     if (controller)
@@ -540,6 +621,7 @@ static void open_controller(void)
         fprintf(stderr, "[hgo/input] controller: %s (%04x:%04x)\n",
                 physical ? physical : "unknown", vendor & 0xffff,
                 product & 0xffff);
+        find_trigger_happy_ordinals();
         return;
     }
 }
@@ -812,6 +894,7 @@ void hgo_input_poll(void *env, void *player, unsigned long frame)
     } else {
         memset(buttons, 0, sizeof buttons);
     }
+    apply_trigger_happy_buttons();
     poll_virtual_controller();
     update_native_controls();
 
