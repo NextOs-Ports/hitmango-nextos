@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.2.0 — 2026-08-05
+
+Control overhaul, validated in hands on an R36T-class device.
+
+- **Rocks can be thrown again**: the tvOS/IL2CPP movement bridge turned out to
+  be mutually exclusive with the game's touch input — with it selected, the
+  board ignored node taps, so the rock aim opened but no target click ever
+  landed. Board play now runs on the game's own touch manager and stays fully
+  clickable; the tvOS bridge remains available via `HGO_NATIVE_CONTROLS=1`.
+- **Board movement is a synthetic touch swipe** (the game's native swipe-to-move
+  mechanic), steered by the D-pad or the right stick. `HGO_SWIPE_MOVE=0`
+  disables it.
+- **Cursor moved to the left stick**; movement lives on the right stick +
+  D-pad. `HGO_SWAP_STICKS=0` restores the old sides.
+- **A and R3 both click** at the cursor everywhere.
+- No packaging, installer or compatibility changes: same NXExtract recipe,
+  same raw-joystick/TRIGGER_HAPPY fallbacks, GLIBC ceiling unchanged (2.27).
+
 ## v1.1.1 — 2026-08-04
 
 Field-report fixes (muOS/RG40XX-H and friends), same day as v1.1.0.

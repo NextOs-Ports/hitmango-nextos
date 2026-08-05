@@ -95,9 +95,11 @@ animation, saving and rendering.
   locale, preferences, display, Firebase startup and Unity activity services.
 - **Audio:** Unity's original FMOD mixer still produces PCM; a native thread
   mirrors Android's `FMODAudioDevice`/`AudioTrack` loop into SDL audio.
-- **Controller:** InControl sees a real gamepad. During board play, D-pad and
-  left stick call the game's own `InputManager_tvOS.OnSwipe`, which resolves an
-  adjacent node through the original `LevelState.OnNodeClicked` path.
+- **Controller:** InControl sees a real gamepad. Board movement is delivered as
+  a short synthetic touch swipe over the game's own touch input manager, so the
+  whole board stays clickable (rock aiming included); D-pad and right stick both
+  steer it. The legacy tvOS/IL2CPP bridge remains behind
+  `HGO_NATIVE_CONTROLS=1` for diagnostics.
 - **Touch UI:** a polished arrow cursor injects Unity touch down/move/up events
   with correct display identifiers. It supports ordinary clicks and dragging.
 
@@ -109,10 +111,9 @@ required.
 
 | Control | Action |
 |---|---|
-| D-pad / left stick | Move Agent 47 to an adjacent board node; navigate native selections |
-| Right stick | Move the persistent arrow cursor |
-| R3 | Click; hold and move for drag |
-| A / Cross | Activate a native highlighted selection where supported |
+| D-pad / right stick | Move Agent 47 to an adjacent board node |
+| Left stick | Move the persistent arrow cursor |
+| A / Cross or R3 | Click at the cursor; hold and move for drag (throw rocks by clicking the highlighted target) |
 | X / Square | Open the lamp/hint during a level |
 | Y / Triangle | Restart the current level |
 | Start | Open or close the pause/objectives screen |
@@ -177,8 +178,10 @@ game data, saves, diagnostics, personal paths and unexpected binaries.
 
 | Variable | Purpose |
 |---|---|
-| `HGO_NATIVE_CONTROLS=0` | Disable the native tvOS/IL2CPP movement bridge |
-| `HGO_CURSOR=0` | Disable the right-stick cursor |
+| `HGO_NATIVE_CONTROLS=1` | Re-enable the legacy tvOS/IL2CPP movement bridge (disables touch board play) |
+| `HGO_SWIPE_MOVE=0` | Disable the synthetic swipe walker |
+| `HGO_SWAP_STICKS=0` | Cursor back on the right stick, movement on the left |
+| `HGO_CURSOR=0` | Disable the arrow cursor |
 | `HGO_AUDIO_DRIVER=name` | Request a specific SDL audio backend |
 | `HGO_NO_AUDIO=1` | Disable the FMOD-to-SDL audio thread |
 | `HGO_VERBOSE=1` | Enable loader diagnostics |
@@ -245,9 +248,11 @@ saves e renderização.
   preferências, display, Firebase e serviços da activity Unity.
 - **Áudio:** o mixer FMOD original gera o PCM; uma thread nativa reproduz o
   fluxo `FMODAudioDevice`/`AudioTrack` pelo áudio SDL.
-- **Controle:** o InControl recebe um gamepad real. No tabuleiro, D-pad e
-  analógico esquerdo chamam `InputManager_tvOS.OnSwipe` do próprio jogo, que
-  resolve o nó vizinho pelo caminho original `LevelState.OnNodeClicked`.
+- **Controle:** o InControl recebe um gamepad real. O movimento no tabuleiro é
+  entregue como um swipe de toque sintético sobre o gerenciador de toque do
+  próprio jogo, então o tabuleiro inteiro continua clicável (mira de pedra
+  incluída); D-pad e analógico direito comandam. A ponte tvOS/IL2CPP antiga
+  permanece atrás de `HGO_NATIVE_CONTROLS=1` para diagnóstico.
 - **Interface touch:** uma seta bem acabada injeta touch down/move/up com o
   display correto, incluindo clique e arrasto.
 
@@ -258,10 +263,9 @@ sob controle do jogo, salvo uma conversão específica comprovadamente necessár
 
 | Controle | Ação |
 |---|---|
-| D-pad / analógico esquerdo | Move o Agente 47 ao nó vizinho; navega seleções nativas |
-| Analógico direito | Move a seta persistente |
-| R3 | Clica; segure e mova para arrastar |
-| A / Cross | Confirma uma seleção nativa quando suportado |
+| D-pad / analógico direito | Move o Agente 47 ao nó vizinho |
+| Analógico esquerdo | Move a seta persistente |
+| A / Cross ou R3 | Clica na seta; segure e mova para arrastar (pedra: clique no alvo destacado) |
 | X / Square | Abre a lâmpada/dica durante a fase |
 | Y / Triangle | Reinicia a fase atual |
 | Start | Abre ou fecha a tela de pausa/objetivos |
@@ -327,8 +331,10 @@ diagnósticos, caminhos pessoais e binários inesperados.
 
 | Variável | Finalidade |
 |---|---|
-| `HGO_NATIVE_CONTROLS=0` | Desativa a ponte de movimento tvOS/IL2CPP nativa |
-| `HGO_CURSOR=0` | Desativa o cursor no analógico direito |
+| `HGO_NATIVE_CONTROLS=1` | Religa a ponte tvOS/IL2CPP antiga (desliga o tabuleiro por toque) |
+| `HGO_SWIPE_MOVE=0` | Desativa o andar por swipe sintético |
+| `HGO_SWAP_STICKS=0` | Cursor de volta no analógico direito, movimento no esquerdo |
+| `HGO_CURSOR=0` | Desativa a seta/cursor |
 | `HGO_AUDIO_DRIVER=nome` | Solicita um backend de áudio SDL específico |
 | `HGO_NO_AUDIO=1` | Desativa a thread FMOD-para-SDL |
 | `HGO_VERBOSE=1` | Ativa diagnóstico do loader |

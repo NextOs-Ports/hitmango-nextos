@@ -182,7 +182,10 @@ export MALLOC_ARENA_MAX=${MALLOC_ARENA_MAX:-2}
 # InputManager_tvOS.OnSwipe handler; that resolves the adjacent Node and calls
 # the original LevelState.OnNodeClicked path.  Set to 0 only as a diagnostic
 # fallback to the stock Android touch implementation.
-export HGO_NATIVE_CONTROLS=${HGO_NATIVE_CONTROLS:-1}
+# Andar por padrao = swipe sintetico sobre o gerenciador de TOQUE do jogo:
+# com o InputManager_tvOS selecionado o LevelState ignora toques nos nos e a
+# pedra (mira por toque) nunca sai.  HGO_NATIVE_CONTROLS=1 religa o caminho
+# tvOS antigo apenas para diagnostico/comparacao.
 export HGO_CURSOR=${HGO_CURSOR:-1}
 
 printf '[runtime] backend=%s audio=%s game=%s\n' \

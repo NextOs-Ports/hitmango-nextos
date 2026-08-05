@@ -135,23 +135,54 @@ static int cursor_is_active(void)
  */
 static int click_uses_a = 1;
 
+/*
+ * ===== Layout dos analógicos (pedido do NextOS, 05/08) =====
+ * Cursor no analógico ESQUERDO; movimento do tabuleiro no DIREITO (o D-pad
+ * continua movendo sempre).  A troca mora nestas duas funções: quem quer o
+ * eixo de movimento ou do cursor pergunta aqui, então polling do InControl,
+ * ponte tvOS, MotionEvent Android e cursor nunca discordam de qual stick é
+ * qual.  HGO_SWAP_STICKS=0 devolve o layout antigo (cursor na direita).
+ */
+static int swap_sticks = 1;
+
+static SDL_GameControllerAxis move_axis(int vertical)
+{
+    if (swap_sticks)
+        return vertical ? SDL_CONTROLLER_AXIS_RIGHTY : SDL_CONTROLLER_AXIS_RIGHTX;
+    return vertical ? SDL_CONTROLLER_AXIS_LEFTY : SDL_CONTROLLER_AXIS_LEFTX;
+}
+
+static SDL_GameControllerAxis cursor_axis(int vertical)
+{
+    if (swap_sticks)
+        return vertical ? SDL_CONTROLLER_AXIS_LEFTY : SDL_CONTROLLER_AXIS_LEFTX;
+    return vertical ? SDL_CONTROLLER_AXIS_RIGHTY : SDL_CONTROLLER_AXIS_RIGHTX;
+}
+
+/* Clique do cursor: A e R3, SEMPRE (pedido do NextOS).  Com a mira de pedra
+ * aberta (seleção nativa tvOS) o A deixa de ser clique e volta a ser o botão
+ * de arremesso — era assim na v1.1.0 aprovada; a v1.1.1 mandou o arremesso
+ * para o L1 e a pedra "parou de sair". */
 static int cursor_click_held(void)
 {
     return buttons[SDL_CONTROLLER_BUTTON_RIGHTSTICK] ||
-           (click_uses_a && buttons[SDL_CONTROLLER_BUTTON_A]);
+           (click_uses_a && !native_selection_active &&
+            buttons[SDL_CONTROLLER_BUTTON_A]);
 }
 
 static int cursor_click_prev(void)
 {
     return previous[SDL_CONTROLLER_BUTTON_RIGHTSTICK] ||
-           (click_uses_a && previous[SDL_CONTROLLER_BUTTON_A]);
+           (click_uses_a && !native_selection_active &&
+            previous[SDL_CONTROLLER_BUTTON_A]);
 }
 
 /* O A vira botão de clique quando o cursor está ativo; nesse modo a antiga
-   confirmação do A é servida pelo L1 (livre neste jogo). */
+   confirmação do A é servida pelo L1 (livre neste jogo).  Na mira de pedra o
+   A é devolvido ao jogo como arremesso. */
 static int a_is_click_button(void)
 {
-    return click_uses_a && cursor_is_active();
+    return click_uses_a && cursor_is_active() && !native_selection_active;
 }
 
 static int hgo_incontrol_button(void *self, int index, void *method)
@@ -217,12 +248,10 @@ static float hgo_incontrol_analog(void *self, int index, void *method)
     if (exit_requested)
         return 0.0f;
     switch (index) {
-    case 0: return axis_value(SDL_CONTROLLER_AXIS_LEFTX);
-    case 1: return axis_value(SDL_CONTROLLER_AXIS_LEFTY);
-    case 2: return cursor_is_active() ? 0.0f
-                                     : axis_value(SDL_CONTROLLER_AXIS_RIGHTX);
-    case 3: return cursor_is_active() ? 0.0f
-                                     : axis_value(SDL_CONTROLLER_AXIS_RIGHTY);
+    case 0: return axis_value(move_axis(0));
+    case 1: return axis_value(move_axis(1));
+    case 2: return cursor_is_active() ? 0.0f : axis_value(cursor_axis(0));
+    case 3: return cursor_is_active() ? 0.0f : axis_value(cursor_axis(1));
     case 4: return (float)(buttons[SDL_CONTROLLER_BUTTON_DPAD_RIGHT] -
                            buttons[SDL_CONTROLLER_BUTTON_DPAD_LEFT]);
     case 5: return (float)(buttons[SDL_CONTROLLER_BUTTON_DPAD_DOWN] -
@@ -712,13 +741,20 @@ static void inject(void *env, void *player, void *event)
     if (!native_inject)
         native_inject = hgo_jni_native("com/unity3d/player/UnityPlayer",
                                        "nativeInjectEvent");
-    if (native_inject && event)
+    if (native_inject && event) {
         /* Unity 2022 registers nativeInjectEvent(InputEvent, displayId).
          * The Android Activity passes its default display (0); omitting this
          * fourth native argument leaves an arbitrary register value that the
          * touch scaler later treats as an array index. */
-        ((uint8_t (*)(void *, void *, void *, int))native_inject)(env, player,
-                                                                  event, 0);
+        uint8_t consumed = ((uint8_t (*)(void *, void *, void *, int))
+                            native_inject)(env, player, event, 0);
+        if (getenv("HGO_INPUT_DIAG"))
+            fprintf(stderr, "[hgo/input] inject event=%p consumed=%d\n",
+                    event, consumed);
+    } else if (getenv("HGO_INPUT_DIAG")) {
+        fprintf(stderr, "[hgo/input] inject SKIPPED inject=%p event=%p\n",
+                native_inject, event);
+    }
 }
 
 static void update_cursor(void *env, void *player)
@@ -735,8 +771,8 @@ static void update_cursor(void *env, void *player)
     if (dt > 0.05f)
         dt = 0.05f;
 
-    float x = axis_value(SDL_CONTROLLER_AXIS_RIGHTX);
-    float y = axis_value(SDL_CONTROLLER_AXIS_RIGHTY);
+    float x = axis_value(cursor_axis(0));
+    float y = axis_value(cursor_axis(1));
     float magnitude = sqrtf(x * x + y * y);
     float target_x = 0.0f;
     float target_y = 0.0f;
@@ -808,10 +844,13 @@ static void update_native_controls(void)
         return;
     }
 
-    const int activate = a_is_click_button()
-        ? SDL_CONTROLLER_BUTTON_LEFTSHOULDER : SDL_CONTROLLER_BUTTON_A;
+    /* Mira de pedra: A arremessa (comportamento da v1.1.0 aprovada); o L1
+       segue aceito para quem se acostumou com a v1.1.1. */
+    const int activate = SDL_CONTROLLER_BUTTON_A;
     if (native_selection_active &&
-        buttons[activate] && !previous[activate]) {
+        ((buttons[activate] && !previous[activate]) ||
+         (buttons[SDL_CONTROLLER_BUTTON_LEFTSHOULDER] &&
+          !previous[SDL_CONTROLLER_BUTTON_LEFTSHOULDER]))) {
         ((void (*)(void *, void *))(il2cpp_base + HGO_TVOS_CLICK_UP))(
             native_input_manager, NULL);
         fprintf(stderr, "[hgo/input] native selection activate\n");
@@ -825,8 +864,8 @@ static void update_native_controls(void)
             native_input_manager, NULL);
     }
 
-    float x = axis_value(SDL_CONTROLLER_AXIS_LEFTX);
-    float y = -axis_value(SDL_CONTROLLER_AXIS_LEFTY);
+    float x = axis_value(move_axis(0));
+    float y = -axis_value(move_axis(1));
     float dpad_x = (float)(buttons[SDL_CONTROLLER_BUTTON_DPAD_RIGHT] -
                            buttons[SDL_CONTROLLER_BUTTON_DPAD_LEFT]);
     float dpad_y = (float)(buttons[SDL_CONTROLLER_BUTTON_DPAD_UP] -
@@ -869,6 +908,71 @@ static void update_native_controls(void)
             fprintf(stderr, "[hgo/input] native pawn swipe %.2f %.2f\n",
                     x, y);
     }
+}
+
+/*
+ * ===== Andar por swipe sintético (achado do NextOS, 05/08) =====
+ * O InputManager_tvOS e o de toque são MUTUAMENTE exclusivos no jogo: com o
+ * tvOS selecionado o LevelState ignora toques nos nós, e a pedra (mira por
+ * toque) nunca sai.  Então o modo padrão volta ao gerenciador de TOQUE — tudo
+ * clicável — e o D-pad/analógico de movimento vira um swipe sintético, que é
+ * mecânica nativa do jogo (swipe em qualquer lugar move o 47).  O caminho
+ * tvOS continua atrás de HGO_NATIVE_CONTROLS=1 para comparação.
+ */
+static int swipe_move_enabled = 1;
+static int swipe_step;          /* 0 = ocioso; conta os quadros do gesto */
+static float swipe_from_x, swipe_from_y, swipe_dx, swipe_dy;
+static int swipe_latched;
+
+static void update_swipe_move(void *env, void *player)
+{
+    if (!swipe_move_enabled || native_controls_enabled)
+        return;
+    /* nunca por cima de um clique/arraste do cursor: é o mesmo dedo */
+    if (cursor_drag_active || cursor_click_held() || ui_tap_release_pending)
+        return;
+
+    if (swipe_step > 0) {
+        float t = (float)swipe_step / 4.0f;
+        int action = swipe_step >= 4 ? 1 : 2;  /* 4 = solta, 1..3 = arrasta */
+        inject(env, player,
+               hgo_jni_touch_event(action, swipe_from_x + swipe_dx * t,
+                                   swipe_from_y + swipe_dy * t));
+        swipe_step++;
+        if (swipe_step > 4)
+            swipe_step = 0;
+        return;
+    }
+
+    float x = axis_value(move_axis(0));
+    float y = -axis_value(move_axis(1));
+    float dpad_x = (float)(buttons[SDL_CONTROLLER_BUTTON_DPAD_RIGHT] -
+                           buttons[SDL_CONTROLLER_BUTTON_DPAD_LEFT]);
+    float dpad_y = (float)(buttons[SDL_CONTROLLER_BUTTON_DPAD_UP] -
+                           buttons[SDL_CONTROLLER_BUTTON_DPAD_DOWN]);
+    if (dpad_x != 0.0f || dpad_y != 0.0f) {
+        x = dpad_x;
+        y = dpad_y;
+    }
+    if (fabsf(x) < 0.55f && fabsf(y) < 0.55f) {
+        swipe_latched = 0;
+        return;
+    }
+    if (swipe_latched)
+        return;
+    swipe_latched = 1;
+
+    float magnitude = sqrtf(x * x + y * y);
+    float length = 0.22f * (float)(screen_width < screen_height
+                                   ? screen_width : screen_height);
+    swipe_from_x = screen_width * 0.5f;
+    swipe_from_y = screen_height * 0.55f;
+    swipe_dx = x / magnitude * length;
+    swipe_dy = -y / magnitude * length;   /* tela cresce para baixo */
+    inject(env, player, hgo_jni_touch_event(0, swipe_from_x, swipe_from_y));
+    swipe_step = 1;
+    if (getenv("HGO_INPUT_DIAG"))
+        fprintf(stderr, "[hgo/input] swipe-move %.2f %.2f\n", x, y);
 }
 
 static void update_gameplay_shortcuts(void *env, void *player)
@@ -936,6 +1040,17 @@ int hgo_input_init(void)
                               strcmp(getenv("HGO_NATIVE_CONTROLS"), "0") != 0;
     click_uses_a = !getenv("HGO_CLICK_A") ||
                    strcmp(getenv("HGO_CLICK_A"), "0") != 0;
+    swap_sticks = !getenv("HGO_SWAP_STICKS") ||
+                  strcmp(getenv("HGO_SWAP_STICKS"), "0") != 0;
+    swipe_move_enabled = !getenv("HGO_SWIPE_MOVE") ||
+                         strcmp(getenv("HGO_SWIPE_MOVE"), "0") != 0;
+    fprintf(stderr,
+            "[hgo/input] layout: cursor=%s movimento=%s+dpad clique=A+R3 "
+            "andar=%s\n",
+            swap_sticks ? "esquerdo" : "direito",
+            swap_sticks ? "direito" : "esquerdo",
+            native_controls_enabled ? "tvOS" :
+            (swipe_move_enabled ? "swipe-sintetico" : "so-toque"));
     if (SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER |
                           SDL_INIT_EVENTS) != 0) {
         fprintf(stderr, "[hgo/input] SDL controller init failed: %s\n",
@@ -1055,10 +1170,10 @@ void hgo_input_poll(void *env, void *player, unsigned long frame)
                hgo_jni_key_event(buttons[i] ? 0 : 1, android_key[i], i));
     }
 
-    float lx = axis_value(SDL_CONTROLLER_AXIS_LEFTX);
-    float ly = axis_value(SDL_CONTROLLER_AXIS_LEFTY);
-    float rx = axis_value(SDL_CONTROLLER_AXIS_RIGHTX);
-    float ry = axis_value(SDL_CONTROLLER_AXIS_RIGHTY);
+    float lx = axis_value(move_axis(0));
+    float ly = axis_value(move_axis(1));
+    float rx = axis_value(cursor_axis(0));
+    float ry = axis_value(cursor_axis(1));
     float lt = axis_value(SDL_CONTROLLER_AXIS_TRIGGERLEFT);
     float rt = axis_value(SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
     float hx = (float)(buttons[SDL_CONTROLLER_BUTTON_DPAD_RIGHT] -
@@ -1067,6 +1182,7 @@ void hgo_input_poll(void *env, void *player, unsigned long frame)
                        buttons[SDL_CONTROLLER_BUTTON_DPAD_UP]);
     inject(env, player, hgo_jni_motion_event(lx, ly, rx, ry, lt, rt, hx, hy));
     update_cursor(env, player);
+    update_swipe_move(env, player);
 
     if (getenv("HGO_INPUT_DIAG") && frame > 0 && frame % 300 == 0) {
         fprintf(stderr,
