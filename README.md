@@ -15,14 +15,6 @@ game data.
 |---|---|---|
 | ![Title on R36T/ArkOS](docs/images/title-r36t.png) | ![Chapter select on NextOS Elite](docs/images/chapters-elite.png) | ![Level gameplay on R36T/ArkOS](docs/images/gameplay-r36t.png) |
 
-## Support this work
-
-These ports take real time and real money to build. If you enjoy them:
-
-- 💗 **GitHub Sponsors**: [github.com/sponsors/NextOs-Ports](https://github.com/sponsors/NextOs-Ports)
-- ☕ **Ko-fi** (PayPal/card): [ko-fi.com/nextos](https://ko-fi.com/nextos)
-- 🇧🇷 **PIX**: [livepix.gg/nextos](https://livepix.gg/nextos)
-
 ## Community
 
 Questions, bug reports, help getting the port running, and news about the next ones:
